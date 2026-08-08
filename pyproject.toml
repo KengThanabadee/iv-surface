@@ -16,8 +16,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dashboard = [
+    "plotly",
+]
 dev = [
     "pytest",
+    "plotly",
 ]
 
 [tool.setuptools.packages.find]
