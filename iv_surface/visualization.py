@@ -24,8 +24,61 @@ def _require_columns(frame: pd.DataFrame, required: set[str], name: str) -> None
         raise ValueError(f"{name} is missing required columns: {missing}")
 
 
+def _normalize_expiry_datetimes(
+    expiry_datetimes, expiry_count: int
+) -> pd.Series | None:
+    if expiry_datetimes is None:
+        return None
+
+    try:
+        values = list(expiry_datetimes)
+    except TypeError as exc:
+        raise ValueError(
+            "expiry_datetimes must contain len(expiries) values"
+        ) from exc
+    if len(values) != expiry_count:
+        raise ValueError("expiry_datetimes must contain len(expiries) values")
+
+    try:
+        normalized = pd.to_datetime(
+            values, utc=True, errors="raise", format="mixed"
+        )
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            "expiry_datetimes must contain valid datetime values"
+        ) from exc
+    return pd.Series(normalized, dtype="datetime64[ns, UTC]")
+
+
+def _format_expiry_label(tau, expiry_datetime=pd.NaT) -> str:
+    if pd.isna(expiry_datetime):
+        return f"tau={tau:g}"
+
+    timestamp = pd.Timestamp(expiry_datetime)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize("UTC")
+    else:
+        timestamp = timestamp.tz_convert("UTC")
+    return timestamp.strftime("%Y-%m-%d")
+
+
+def _expiry_labels(frame: pd.DataFrame, taus) -> list[str]:
+    labels = []
+    has_metadata = "expiry_datetime" in frame.columns
+    for tau in taus:
+        expiry_datetime = pd.NaT
+        if has_metadata:
+            values = frame.loc[
+                frame["tau"] == tau, "expiry_datetime"
+            ].dropna()
+            if not values.empty:
+                expiry_datetime = values.iloc[0]
+        labels.append(_format_expiry_label(tau, expiry_datetime))
+    return labels
+
+
 def surface_to_long_frame(
-    iv_surface, expiries, strikes, spot_price
+    iv_surface, expiries, strikes, spot_price, expiry_datetimes=None
 ) -> pd.DataFrame:
     """Convert an expiry-by-strike IV grid to chart-ready long-form data."""
     try:
@@ -44,18 +97,25 @@ def surface_to_long_frame(
     if not np.isfinite(spot_value) or spot_value <= 0:
         raise ValueError("spot_price must be finite and positive")
 
+    expiry_datetime_values = _normalize_expiry_datetimes(
+        expiry_datetimes, len(expiry_values)
+    )
     tau = np.repeat(expiry_values, len(strike_values))
     strike = np.tile(strike_values, len(expiry_values))
-
-    return pd.DataFrame(
+    data = {"tau": tau}
+    if expiry_datetime_values is not None:
+        data["expiry_datetime"] = expiry_datetime_values.repeat(
+            len(strike_values)
+        ).reset_index(drop=True)
+    data.update(
         {
-            "tau": tau,
             "strike": strike,
             "iv": surface.reshape(-1),
             "spot_price": spot_value,
             "moneyness": strike / spot_value,
         }
     )
+    return pd.DataFrame(data)
 
 
 def atm_term_structure_frame(
@@ -73,8 +133,14 @@ def atm_term_structure_frame(
     if not np.isfinite(distance_bound) or distance_bound < 0:
         raise ValueError("max_moneyness_distance must be finite and non-negative")
 
+    has_expiry_metadata = "expiry_datetime" in long_frame.columns
     rows = []
     for tau, expiry_frame in long_frame.groupby("tau", sort=True, dropna=False):
+        metadata = (
+            {"expiry_datetime": expiry_frame["expiry_datetime"].iloc[0]}
+            if has_expiry_metadata
+            else {}
+        )
         iv = expiry_frame["iv"].to_numpy(dtype=float)
         moneyness = expiry_frame["moneyness"].to_numpy(dtype=float)
         finite = np.isfinite(iv) & np.isfinite(moneyness)
@@ -83,6 +149,7 @@ def atm_term_structure_frame(
             rows.append(
                 {
                     "tau": tau,
+                    **metadata,
                     "strike": np.nan,
                     "iv": np.nan,
                     "moneyness": np.nan,
@@ -106,6 +173,7 @@ def atm_term_structure_frame(
             rows.append(
                 {
                     "tau": tau,
+                    **metadata,
                     "strike": np.nan,
                     "iv": np.nan,
                     "moneyness": np.nan,
@@ -126,6 +194,7 @@ def atm_term_structure_frame(
         rows.append(
             {
                 "tau": tau,
+                **metadata,
                 "strike": float(tied["strike"].mean()),
                 "iv": float(tied["iv"].mean()),
                 "moneyness": float(tied["moneyness"].mean()),
@@ -136,17 +205,19 @@ def atm_term_structure_frame(
             }
         )
 
-    return pd.DataFrame(
-        rows,
-        columns=[
-            "tau",
+    columns = ["tau"]
+    if has_expiry_metadata:
+        columns.append("expiry_datetime")
+    columns.extend(
+        [
             "strike",
             "iv",
             "moneyness",
             "atm_distance",
             "selection_status",
-        ],
+        ]
     )
+    return pd.DataFrame(rows, columns=columns)
 
 
 def make_iv_heatmap(long_frame: pd.DataFrame) -> go.Figure:
@@ -179,6 +250,11 @@ def make_iv_heatmap(long_frame: pd.DataFrame) -> go.Figure:
     )
     figure = go.Figure(data=[trace])
     figure.update_layout(xaxis_title="K / S", yaxis_title="tau (years)")
+    figure.update_yaxes(
+        tickmode="array",
+        tickvals=iv_grid.index.to_numpy(dtype=float),
+        ticktext=_expiry_labels(long_frame, iv_grid.index),
+    )
     return figure
 
 
@@ -194,15 +270,18 @@ def make_smile_figure(
         if selected is not None and tau not in selected:
             continue
         smile = long_frame[long_frame["tau"] == tau].sort_values("moneyness")
+        expiry_label = _expiry_labels(long_frame, [tau])[0]
         figure.add_trace(
             go.Scatter(
                 x=smile["moneyness"].to_numpy(dtype=float),
                 y=smile["iv"].to_numpy(dtype=float),
                 customdata=smile["strike"].to_numpy(dtype=float),
                 mode="lines+markers",
-                name=f"tau={tau:g}",
+                name=expiry_label,
+                meta=tau,
                 connectgaps=False,
                 hovertemplate=(
+                    "tau: %{meta:.4f} years<br>"
                     "K / S: %{x:.4f}<br>"
                     "strike: %{customdata:g}<br>"
                     "IV: %{y:.2%}<extra>%{fullData.name}</extra>"
@@ -242,6 +321,11 @@ def make_atm_term_structure_figure(atm_frame: pd.DataFrame) -> go.Figure:
     figure = go.Figure(data=[trace])
     figure.update_layout(
         xaxis_title="tau (years)", yaxis_title="implied volatility"
+    )
+    figure.update_xaxes(
+        tickmode="array",
+        tickvals=data["tau"].to_numpy(dtype=float),
+        ticktext=_expiry_labels(data, data["tau"]),
     )
     figure.update_yaxes(tickformat=".0%")
     return figure
