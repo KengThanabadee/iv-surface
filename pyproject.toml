@@ -5,14 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "implied-vol-surface"
 version = "0.1.0"
-description = "Black-Scholes implied-volatility solving and simple IV surface interpolation."
+description = "Reusable visualization foundations for crypto-options volatility analytics."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "pandas",
-    "requests",
-    "scipy",
 ]
 
 [project.optional-dependencies]
