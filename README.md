@@ -1,58 +1,38 @@
 # implied-vol-surface
 
-`implied-vol-surface` is being developed into a Deribit-backed crypto-options
-analytics workspace. The current `main` branch contains the reusable,
-Streamlit-independent visualization layer while the new market-data path is
-built in reviewable components.
+`implied-vol-surface` is a Deribit-backed crypto-options market data and
+analytics workspace in development. The active path begins with a normalized,
+provenance-rich BTC inverse-option snapshot and builds analytical components
+from that data contract.
 
-The earlier Bybit price-to-IV learning implementation—including its
-Black-Scholes solver, collector, tests, manual check script, and original
-documentation—is preserved in the Git tag `bybit-solved-iv-study`.
+## Active direction
 
-## Current functionality
+The first vertical slice is:
 
-`iv_surface.visualization` currently provides:
-
-- conversion of an expiry-by-strike IV grid into chart-ready long-form data;
-- optional aligned UTC expiry display metadata;
-- a bounded and inspectable ATM proxy;
-- Plotly IV heatmap, smile, and ATM term-structure figures;
-- explicit `NaN` gaps without implicit interpolation.
-
-The Deribit adapter, normalized option-chain snapshot, Call/Put composite IV,
-and Streamlit workspace are not implemented yet.
-
-## Installation
-
-Create or activate the project environment, then install the package with the
-dashboard and development dependencies:
-
-```bash
-.venv/bin/python -m pip install -e '.[dashboard,dev]'
+```text
+Deribit source snapshot
+        -> normalized long-form option records
+        -> matched Call/Put Composite IV
+        -> heatmap, smiles, and ATM term structure
 ```
 
-Plotly remains optional for consumers that do not import the visualization
-module.
+Deribit `mark_iv` will be treated as provider-supplied reference IV. Bid/ask IV,
+quote state, Call/Put gaps, timestamps, and source fields remain available as
+quality and provenance context.
 
-## Tests
+The normalized data contract is designed before chart APIs so the Deribit
+source schema defines the foundation.
 
-```bash
-.venv/bin/python -m pytest
-```
+## Development
 
-## Archived Bybit study
-
-To inspect the complete earlier implementation without changing the current
-branch:
+Use the repository environment:
 
 ```bash
-git show bybit-solved-iv-study:README.md
-git show bybit-solved-iv-study:iv_surface/solver.py
+.venv/bin/python -m pip install -e '.[dev]'
 ```
 
-If that implementation is needed again, create a separate branch from the tag
-instead of mixing its market-data assumptions into the Deribit path:
+## History
 
-```bash
-git switch -c revive-bybit-study bybit-solved-iv-study
-```
+Earlier Bybit price-to-IV and grid-first visualization experiments remain
+recorded in the `bybit-solved-iv-study` and `grid-visualization-study` Git tags
+as part of the project's learning history.

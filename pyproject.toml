@@ -5,22 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "implied-vol-surface"
 version = "0.1.0"
-description = "Reusable visualization foundations for crypto-options volatility analytics."
+description = "Deribit-backed crypto-options market data and analytics workspace."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "numpy",
-    "pandas",
-]
+dependencies = []
 
 [project.optional-dependencies]
-dashboard = [
-    "plotly",
-]
-dev = [
-    "pytest",
-    "plotly",
-]
+dev = ["pytest"]
 
 [tool.setuptools.packages.find]
 include = ["iv_surface*"]
