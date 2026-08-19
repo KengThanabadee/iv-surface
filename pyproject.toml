@@ -5,13 +5,24 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "implied-vol-surface"
 version = "0.1.0"
-description = "Deribit-backed crypto-options market data and analytics workspace."
+description = "Black-Scholes implied-volatility solving and simple IV surface interpolation."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "numpy",
+    "pandas",
+    "requests",
+    "scipy",
+]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dashboard = [
+    "plotly",
+]
+dev = [
+    "pytest",
+    "plotly",
+]
 
 [tool.setuptools.packages.find]
 include = ["iv_surface*"]
