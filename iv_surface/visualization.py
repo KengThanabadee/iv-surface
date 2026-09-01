@@ -119,7 +119,7 @@ def surface_to_long_frame(
 
 
 def atm_term_structure_frame(
-    long_frame: pd.DataFrame, max_moneyness_distance: float = 0.05
+    long_frame: pd.DataFrame, max_moneyness_distance: float = 0.02
 ) -> pd.DataFrame:
     """Select a bounded, transparent ATM proxy independently for each expiry."""
     _require_columns(long_frame, _LONG_FRAME_COLUMNS, "long_frame")

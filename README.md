@@ -18,6 +18,7 @@ This is an early local package in a personal quant-library ecosystem. It is usef
 - Interpolates IV inside an expiry/strike grid with bilinear interpolation.
 - Fetches and parses Bybit option-chain ticker data into a DataFrame, keeping market quotes separate from exchange mark values.
 - Converts usable option-chain mid prices into the expiry/strike grid used by the surface builder.
+- Combines aligned Call and Put surfaces with a spot-based, auditable selection rule.
 
 ## Core Data Shape
 
@@ -121,6 +122,21 @@ fetch_chain() -> prepare_surface_inputs() -> build_surface()
 
 Returns the IV surface together with the option price grid, spot price, expiries, and strikes. Missing usable quotes remain `NaN` in the price grid and IV surface.
 
+### `build_combined_surface_from_chain(chain, r=0)`
+
+Builds aligned Call and Put surfaces with one shared median `spot_price`, then
+returns one Combined IV per expiry/strike together with the separate Call/Put
+inputs and IVs. Selection is spot-based:
+
+- below `K / S = 0.98`, prefer Put IV;
+- from `0.98` through `1.02`, average same-strike Call/Put IV when both solve;
+- above `K / S = 1.02`, prefer Call IV.
+
+If the preferred side is unavailable, the other side may be used with an
+explicit value in `source_grid`; if neither side solves, the Combined IV stays
+`NaN`. Within the near-ATM band, the blend is the arithmetic mean of separately
+solved Call and Put IVs at the same expiry and strike when both are available.
+
 ## Assumptions And Limitations
 
 - Uses Black-Scholes European option assumptions.
@@ -129,6 +145,8 @@ Returns the IV surface together with the option price grid, spot price, expiries
 - IV solving requires `T > 0`; implied volatility is undefined at expiry.
 - `build_surface` fills failed IV solves with `NaN`.
 - Market IV surfaces should be built from usable bid/ask mid prices; `mark_price` and `mark_iv` are kept for comparison.
+- The ATM term-structure proxy accepts only the nearest finite IV within 2% of
+  spot; equally near listed strikes are averaged.
 - Interpolation requires at least two strictly increasing expiries and strikes.
 - Interpolation is in-grid only; no extrapolation.
 - The surface is a raw interpolated grid, not an arbitrage-free fitted surface.

@@ -118,28 +118,28 @@ def test_atm_term_structure_selects_nearest_and_accepts_bound():
     frame = pd.DataFrame(
         {
             "tau": [0.5, 0.25, 0.25],
-            "strike": [105, 94, 102],
+            "strike": [102, 94, 102],
             "iv": [0.30, 0.24, 0.20],
-            "moneyness": [1.05, 0.94, 1.02],
+            "moneyness": [1.02, 0.94, 1.02],
         }
     )
 
     result = atm_term_structure_frame(frame)
 
     assert result["tau"].tolist() == [0.25, 0.5]
-    assert result["strike"].tolist() == [102.0, 105.0]
+    assert result["strike"].tolist() == [102.0, 102.0]
     assert result["selection_status"].tolist() == ["nearest", "nearest"]
-    assert np.allclose(result["atm_distance"], [0.02, 0.05])
+    assert np.allclose(result["atm_distance"], [0.02, 0.02])
 
 
-@pytest.mark.parametrize("right_moneyness", [1.05, 1.0500000000005])
+@pytest.mark.parametrize("right_moneyness", [1.02, 1.0200000000005])
 def test_atm_term_structure_averages_exact_and_near_ties(right_moneyness):
     frame = pd.DataFrame(
         {
             "tau": [0.25, 0.25],
-            "strike": [95, 105],
+            "strike": [98, 102],
             "iv": [0.20, 0.24],
-            "moneyness": [0.95, right_moneyness],
+            "moneyness": [0.98, right_moneyness],
         }
     )
 
@@ -149,7 +149,7 @@ def test_atm_term_structure_averages_exact_and_near_ties(right_moneyness):
     assert result["strike"] == 100
     assert result["iv"] == pytest.approx(0.22)
     assert result["moneyness"] == pytest.approx(
-        (0.95 + right_moneyness) / 2
+        (0.98 + right_moneyness) / 2
     )
 
 
@@ -157,16 +157,16 @@ def test_atm_term_structure_does_not_average_distinct_distances():
     frame = pd.DataFrame(
         {
             "tau": [0.25, 0.25],
-            "strike": [95, 105],
+            "strike": [98, 102],
             "iv": [0.20, 0.24],
-            "moneyness": [0.95, 1.050000000002],
+            "moneyness": [0.98, 1.020000000002],
         }
     )
 
     result = atm_term_structure_frame(frame).iloc[0]
 
     assert result["selection_status"] == "nearest"
-    assert result["strike"] == 95
+    assert result["strike"] == 98
     assert result["iv"] == 0.20
 
 
@@ -191,6 +191,23 @@ def test_atm_term_structure_preserves_outside_bound_and_no_finite_iv():
     assert np.isnan(
         missing[["strike", "iv", "moneyness", "atm_distance"]].astype(float)
     ).all()
+
+
+def test_atm_term_structure_rejects_nearest_just_outside_default_two_percent():
+    frame = pd.DataFrame(
+        {
+            "tau": [0.25],
+            "strike": [102.0000000002],
+            "iv": [0.20],
+            "moneyness": [1.020000000002],
+        }
+    )
+
+    result = atm_term_structure_frame(frame).iloc[0]
+
+    assert result["selection_status"] == "outside_bound"
+    assert result["atm_distance"] == pytest.approx(0.020000000002)
+    assert np.isnan(result["iv"])
 
 
 def test_atm_term_structure_preserves_expiry_metadata_for_rejected_rows():
