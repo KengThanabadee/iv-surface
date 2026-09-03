@@ -137,7 +137,7 @@ def build_surface_from_chain(
     )
 
 
-def _combined_price_grid(
+def _option_price_grid_from_rows(
     usable: pd.DataFrame, expiries: list[float], strikes: list[float]
 ) -> np.ndarray:
     grid = np.full((len(expiries), len(strikes)), np.nan)
@@ -189,8 +189,8 @@ def build_combined_surface_from_chain(
             stacklevel=2,
         )
 
-    call_prices = _combined_price_grid(call_rows, expiries, strikes)
-    put_prices = _combined_price_grid(put_rows, expiries, strikes)
+    call_prices = _option_price_grid_from_rows(call_rows, expiries, strikes)
+    put_prices = _option_price_grid_from_rows(put_rows, expiries, strikes)
     call_iv = build_surface(call_prices, spot_price, expiries, strikes, r, "call")
     put_iv = build_surface(put_prices, spot_price, expiries, strikes, r, "put")
 

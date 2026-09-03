@@ -6,7 +6,7 @@ import warnings
 import numpy as np
 import requests
 
-from iv_surface.collector import _filter_usable_chain_rows, prepare_surface_inputs
+from iv_surface.surface_builder import _filter_usable_chain_rows, prepare_surface_inputs
 from iv_surface.fetcher import DEFAULT_BYBIT_BASE_URL, DEFAULT_BYBIT_TIMEOUT, fetch_chain
 from iv_surface.solver import solve_iv
 

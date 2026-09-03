@@ -20,6 +20,18 @@ This is an early local package in a personal quant-library ecosystem. It is usef
 - Converts usable option-chain mid prices into the expiry/strike grid used by the surface builder.
 - Combines aligned Call and Put surfaces with a spot-based, auditable selection rule.
 
+## Module Boundaries
+
+- `iv_surface.fetcher` owns Bybit HTTP access, raw snapshot envelopes, and
+  parsing exchange responses into the canonical option-chain DataFrame.
+- `iv_surface.surface_builder` converts that canonical chain into option-price
+  grids and side-specific or Combined IV surfaces.
+- `iv_surface.solver` owns Black-Scholes pricing, IV root finding, grid solving,
+  and interpolation.
+- `iv_surface.surface_transforms` reshapes IV surfaces and selects the bounded
+  ATM proxy without requiring Plotly.
+- `iv_surface.visualization` constructs Plotly figures from prepared frames.
+
 ## Core Data Shape
 
 IV surface arrays use expiry rows and strike columns:

@@ -1,13 +1,17 @@
 from datetime import datetime
+import subprocess
+import sys
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
 
-from iv_surface.visualization import (
+from iv_surface.surface_transforms import (
     surface_to_long_frame,
     atm_term_structure_frame,
+)
+from iv_surface.visualization import (
     make_iv_heatmap,
     make_smile_figure,
     make_atm_term_structure_figure,
@@ -21,6 +25,29 @@ def _long_frame():
         strikes=[110, 90],
         spot_price=100,
     )
+
+
+def test_surface_transforms_do_not_require_plotly():
+    script = """
+import importlib.abc
+import sys
+
+class BlockPlotly(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "plotly" or fullname.startswith("plotly."):
+            raise ImportError("plotly intentionally unavailable")
+        return None
+
+sys.meta_path.insert(0, BlockPlotly())
+from iv_surface.surface_transforms import (
+    atm_term_structure_frame,
+    surface_to_long_frame,
+)
+
+frame = surface_to_long_frame([[0.2]], [0.25], [100], 100)
+atm_term_structure_frame(frame)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)
 
 
 def test_surface_to_long_frame_preserves_shape_order_and_nan():

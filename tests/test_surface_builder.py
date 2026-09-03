@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from iv_surface.collector import (
+from iv_surface.surface_builder import (
     CombinedSurfaceResult,
     SurfaceInputs,
     SurfaceResult,
