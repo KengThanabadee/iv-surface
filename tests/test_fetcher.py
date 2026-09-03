@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 
 import numpy as np
 import pytest
@@ -10,6 +11,9 @@ from iv_surface.fetcher import (
     _to_float,
     compute_tau,
     fetch_chain,
+    fetch_chain_snapshot,
+    load_chain_snapshot,
+    parse_chain_snapshot,
     parse_symbol,
 )
 
@@ -128,6 +132,7 @@ def test_fetch_chain_accepts_custom_base_url_and_timeout(monkeypatch):
     df = fetch_chain("ETH", base_url="https://api.bybit.com", timeout=3)
 
     assert df.empty
+    assert df.columns.tolist() == fetcher._CHAIN_COLUMNS
 
 
 def test_bybit_tickers_url_normalizes_trailing_slash():
@@ -165,3 +170,162 @@ def test_fetch_chain_does_not_fallback_to_mark_price(monkeypatch):
     assert np.isnan(row["mid_price"])
     assert row["quote_source"] == "none"
     assert row["mark_price"] == 108
+
+
+def test_raw_snapshot_preserves_response_and_request_metadata(monkeypatch):
+    payload = {"retCode": 0, "result": {"list": []}}
+
+    def fake_get(url, params, timeout):
+        return _FakeResponse(payload)
+
+    monkeypatch.setattr(fetcher.requests, "get", fake_get)
+
+    snapshot = fetch_chain_snapshot("BTC")
+
+    assert snapshot["schema_version"] == 1
+    assert snapshot["request"] == {
+        "base_url": fetcher.DEFAULT_BYBIT_BASE_URL,
+        "endpoint": "/v5/market/tickers",
+        "params": {"category": "option", "baseCoin": "BTC"},
+    }
+    assert snapshot["response"] is payload
+    captured_at = datetime.fromisoformat(
+        snapshot["captured_at_utc"].replace("Z", "+00:00")
+    )
+    assert captured_at.tzinfo == timezone.utc
+
+
+def test_snapshot_parser_freezes_tau_at_capture_time():
+    snapshot = {
+        "schema_version": 1,
+        "captured_at_utc": "2030-06-27T02:00:00Z",
+        "request": {
+            "base_url": "https://api.bytick.com",
+            "endpoint": "/v5/market/tickers",
+            "params": {"category": "option", "baseCoin": "BTC"},
+        },
+        "response": {
+            "result": {
+                "list": [
+                    {
+                        "symbol": "BTC-27JUN30-100000-C-USDT",
+                        "bid1Price": "100",
+                        "ask1Price": "120",
+                        "indexPrice": "99900",
+                    }
+                ]
+            }
+        },
+    }
+
+    first = parse_chain_snapshot(snapshot)
+    second = parse_chain_snapshot(snapshot)
+
+    expected_tau = compute_tau(
+        datetime(2030, 6, 27, 8, tzinfo=timezone.utc),
+        datetime(2030, 6, 27, 2, tzinfo=timezone.utc),
+    )
+    assert first.loc[0, "tau"] == expected_tau
+    assert second.loc[0, "tau"] == expected_tau
+    assert first.loc[0, "expiry_dt"] == datetime(
+        2030, 6, 27, 8, tzinfo=timezone.utc
+    )
+
+
+def test_load_snapshot_validates_offline(tmp_path):
+    snapshot = {
+        "schema_version": 1,
+        "captured_at_utc": "2030-06-27T02:00:00Z",
+        "request": {
+            "base_url": "https://api.bytick.com",
+            "endpoint": "/v5/market/tickers",
+            "params": {"category": "option", "baseCoin": "BTC"},
+        },
+        "response": {"result": {"list": []}},
+    }
+    path = tmp_path / "snapshot.json"
+    path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    assert load_chain_snapshot(path) == snapshot
+
+
+@pytest.mark.parametrize(
+    "captured_at_utc",
+    ["2030-06-27T02:00:00", "not-a-timestamp", None],
+)
+def test_snapshot_parser_rejects_invalid_capture_time(captured_at_utc):
+    snapshot = {
+        "schema_version": 1,
+        "captured_at_utc": captured_at_utc,
+        "request": {
+            "base_url": "https://api.bytick.com",
+            "endpoint": "/v5/market/tickers",
+            "params": {"category": "option", "baseCoin": "BTC"},
+        },
+        "response": {"result": {"list": []}},
+    }
+
+    with pytest.raises(ValueError, match="captured_at_utc"):
+        parse_chain_snapshot(snapshot)
+
+
+def test_snapshot_parser_reports_unsupported_symbols():
+    snapshot = {
+        "schema_version": 1,
+        "captured_at_utc": "2030-06-27T02:00:00Z",
+        "request": {
+            "base_url": "https://api.bytick.com",
+            "endpoint": "/v5/market/tickers",
+            "params": {"category": "option", "baseCoin": "BTC"},
+        },
+        "response": {
+            "result": {
+                "list": [
+                    {"symbol": "BTC-UNKNOWN-FORMAT"},
+                    {
+                        "symbol": "BTC-27JUN30-100000-C-USDT",
+                        "bid1Price": "100",
+                        "ask1Price": "120",
+                        "indexPrice": "99900",
+                    },
+                ]
+            }
+        },
+    }
+
+    with pytest.raises(ValueError, match="unsupported symbols.*BTC-UNKNOWN-FORMAT"):
+        parse_chain_snapshot(snapshot)
+
+
+def test_snapshot_loader_validates_envelope_without_parsing_tickers(tmp_path):
+    snapshot = {
+        "schema_version": 1,
+        "captured_at_utc": "2030-06-27T02:00:00Z",
+        "request": {
+            "base_url": "https://api.bytick.com",
+            "endpoint": "/v5/market/tickers",
+            "params": {"category": "option", "baseCoin": "BTC"},
+        },
+        "response": {
+            "result": {"list": [{"symbol": "BTC-UNKNOWN-FORMAT"}]}
+        },
+    }
+    path = tmp_path / "snapshot.json"
+    path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    assert load_chain_snapshot(path) == snapshot
+    with pytest.raises(ValueError, match="unsupported symbols"):
+        parse_chain_snapshot(snapshot)
+
+
+def test_snapshot_loader_requires_request_metadata(tmp_path):
+    snapshot = {
+        "schema_version": 1,
+        "captured_at_utc": "2030-06-27T02:00:00Z",
+        "response": {"result": {"list": []}},
+    }
+    path = tmp_path / "snapshot.json"
+    path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="request metadata"):
+        load_chain_snapshot(path)
